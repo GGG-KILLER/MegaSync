@@ -1,0 +1,197 @@
+﻿@using System.ComponentModel.DataAnnotations
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.EntityFrameworkCore.Infrastructure
+@using MegaSync.Model
+@using MegaSync.Data
+@page "/"
+@rendermode InteractiveServer
+@inject IDbContextFactory<AppDbContext> dbContextFactory
+
+<PageTitle>Home</PageTitle>
+
+<div class="container-fluid h-100">
+    <div class="row h-50">
+        <div class="col-12">
+            <div class="vstack h-100">
+                <table id="link-list" class="table flex-grow-1" style="table-layout: fixed;">
+                    <thead>
+                        <tr>
+                            <th scope="col">Link</th>
+                            <th scope="col">Path</th>
+                            <th scope="col">Last Checked</th>
+                            <th scope="col"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (links is null)
+                        {
+                            <tr>
+                                <td colspan="4" class="text-center">Loading...</td>
+                            </tr>
+                        }
+                        else
+                        {
+                            foreach (var link in links)
+                            {
+                                <tr>
+                                    <td>@link.Url</td>
+                                    <td>@link.Path</td>
+                                    <td>@link.LastUpdated.ToString("U", System.Globalization.CultureInfo.GetCultureInfo("pt-BR"))</td>
+                                    <td><button @onclick="async () => await DeleteLinkAsync(link.Url)">Delete</button></td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <div class="row h-50">
+        <div class="col-12 col-sm-4 h-100">
+            <EditForm EditContext=editContext OnValidSubmit="AddLinkAsync">
+                <DataAnnotationsValidator />
+                <div class="row">
+                    <div class="col">
+                        <div class="vstack">
+                            <div class="form-floating mb-2">
+                                <InputText id="url" class="form-control" @bind-Value="model.Url" />
+                                <ValidationMessage id="urlFeedback" class="invalid-feedback" For="@(() => model.Url)" />
+                                <label for="url">URL</label>
+                            </div>
+                            <div class="form-floating mb-2">
+                                <InputText id="path" class="form-control" @bind-Value="model.Path" />
+                                <ValidationMessage For="@(() => model.Path)" class="invalid-feedback" />
+                                <label for="path">Download path</label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-auto">
+                        <input type="submit" class="btn btn-primary h-100" style="width: 6rem;" value="Watch" disabled="@formInvalid" />
+                    </div>
+                </div>
+            </EditForm>
+        </div>
+        <div id="console" class="col-12 col-sm-8 h-100">
+            <pre>@log</pre>
+        </div>
+    </div>
+</div>
+
+
+@code {
+    private MegaLink[]? links;
+    private string? log;
+    private EditModel model = new();
+    private EditContext? editContext;
+    private bool formInvalid = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        editContext = new EditContext(model);
+        editContext.SetFieldCssClassProvider(new Boilerplate.BootstrapValidationFieldClassProvider());
+        editContext.OnFieldChanged += HandleFieldChanged;
+
+        try
+        {
+            await RefreshLinksAsync();
+        }
+        catch (Exception) { links = null; }
+        _ = LinkRefresherAsync();
+    }
+
+    private async Task LinkRefresherAsync()
+    {
+        while (true)
+        {
+            await Task.Delay(5000);
+            await RefreshLinksAsync();
+        }
+    }
+
+    private async Task RefreshLinksAsync()
+    {
+        MegaLink[] links;
+        string log;
+        try
+        {
+            using (var dbContext = await dbContextFactory.CreateDbContextAsync())
+            {
+                links = await dbContext.MegaLinks.ToArrayAsync();
+                var lines = await dbContext.LogMessages.OrderByDescending(x => x.Timestamp).Take(50).ToArrayAsync();
+                log = string.Join("\n", lines.Select(x => $"{x.Timestamp:hh:MM:ss} {x.Message}"));
+            }
+        }
+        catch (Exception)
+        {
+            return; // Just try again next time.
+        }
+        await InvokeAsync(() =>
+        {
+            this.links = links;
+            this.log = log;
+            StateHasChanged();
+        });
+    }
+
+    private void HandleFieldChanged(object? sender, FieldChangedEventArgs e)
+    {
+        if (editContext is not null)
+        {
+            formInvalid = !editContext.Validate();
+            StateHasChanged();
+        }
+    }
+
+    public async Task AddLinkAsync(EditContext context)
+    {
+        var model = (EditModel)context.Model;
+        var link = new MegaLink
+        {
+            Url = model.Url!,
+            Path = model.Path!,
+            LastUpdated = DateTime.MinValue
+        };
+
+        using (var dbContext = await dbContextFactory.CreateDbContextAsync())
+        {
+            await dbContext.MegaLinks.AddAsync(link);
+            await dbContext.SaveChangesAsync();
+        }
+
+        await InvokeAsync(() =>
+        {
+            model.Url = "";
+            model.Path = "";
+            StateHasChanged();
+        });
+        await RefreshLinksAsync();
+    }
+
+    public async Task DeleteLinkAsync(string url)
+    {
+        using (var dbContext = await dbContextFactory.CreateDbContextAsync())
+        {
+            await dbContext.MegaLinks.Where(x => x.Url == url).ExecuteDeleteAsync();
+            await dbContext.SaveChangesAsync();
+        }
+        await RefreshLinksAsync();
+    }
+
+    public void Dispose()
+    {
+        if (editContext is not null)
+        {
+            editContext.OnFieldChanged -= HandleFieldChanged;
+        }
+    }
+
+    class EditModel
+    {
+        [Required(AllowEmptyStrings = false, ErrorMessage = "You must provide a link to monitor.")]
+        [RegularExpression(@"^https://mega(\.co)?\.nz/folder/[^#]+#[^$/]+", ErrorMessage = "The link to monitor should be a valid mega url.")]
+        public string? Url { get; set; } = "";
+
+        [Required(AllowEmptyStrings = false, ErrorMessage = "You must provide a download path.")]
+        public string? Path { get; set; } = "";
+    }
+}
