@@ -90,11 +90,33 @@ public sealed class SyncService(ILogger<SyncService> logger, IServiceProvider se
 
                     var file = new FileInfo(Path.Combine(link.Path, download.FullPath));
                     if (!file.Directory!.Exists)
+                    {
                         file.Directory.Create();
+                        if (OperatingSystem.IsLinux())
+                        {
+                            File.SetUnixFileMode(
+                                file.Directory.FullName,
+                                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
+                                | UnixFileMode.GroupRead | UnixFileMode.GroupWrite | UnixFileMode.GroupExecute
+                                | UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+                        }
+                    }
 
                     var progress = new Progress<double>(x =>
                         _logger.LogInformation("Progress on donwloading {File}: {Percent}%", download, x));
-                    await _client.DownloadFileAsync(download.Node, file.FullName, progress, stoppingToken);
+
+                    using var remote = await _client.DownloadAsync(download.Node, progress, stoppingToken);
+                    using var local = File.Open(file.FullName, FileMode.Create, FileAccess.Write, FileShare.None);
+                    await remote.CopyToAsync(local, stoppingToken);
+                    if (OperatingSystem.IsLinux())
+                    {
+                        File.SetUnixFileMode(
+                            file.FullName,
+                            UnixFileMode.UserRead | UnixFileMode.UserWrite
+                            | UnixFileMode.GroupRead | UnixFileMode.GroupWrite
+                            | UnixFileMode.OtherRead);
+                    }
+
                     await context.SaveChangesAsync(stoppingToken);
                 }
 
