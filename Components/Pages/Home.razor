@@ -118,7 +118,7 @@
             {
                 links = await dbContext.MegaLinks.ToArrayAsync();
                 var lines = await dbContext.LogMessages.OrderByDescending(x => x.Timestamp).Take(50).ToArrayAsync();
-                log = string.Join("\n", lines.Select(x => $"{x.Timestamp:hh:MM:ss} {x.Message}"));
+                log = string.Join("\n", lines.Select(x => $"{x.Timestamp:HH:mm:ss} {x.Message}"));
             }
         }
         catch (Exception)
