@@ -77,4 +77,6 @@ h1:focus {
     #console > pre {
         margin: 0;
         padding: 0;
+        word-break: break-all;
+        text-wrap: wrap;
     }
