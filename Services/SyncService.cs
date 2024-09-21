@@ -38,13 +38,16 @@ public sealed class SyncService(ILogger<SyncService> logger, IServiceProvider se
         var contextFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<AppDbContext>>();
         using var context = await contextFactory.CreateDbContextAsync(stoppingToken);
 
-        foreach (var link in context.MegaLinks.Where(x => x.LastUpdated < DateTime.Now.AddHours(-1)))
+        foreach (var link in await context.MegaLinks.Where(x => x.LastUpdated < DateTime.Now.AddHours(-1))
+                                                    .ToArrayAsync(cancellationToken: stoppingToken)
+                                                    .ConfigureAwait(false))
         {
             try
             {
                 stoppingToken.ThrowIfCancellationRequested();
                 _logger.LogInformation("Executing sync for {Link}", link.Url);
-                await context.LogMessages.AddAsync(new LogMessage { Timestamp = DateTime.Now, Message = $"Initiating sync for {link.Path}" });
+                await context.LogMessages.AddAsync(new LogMessage { Timestamp = DateTime.Now, Message = $"Initiating sync for {link.Path}" })
+                                         .ConfigureAwait(false);
 
                 Directory.CreateDirectory(link.Path);
 
@@ -66,7 +69,8 @@ public sealed class SyncService(ILogger<SyncService> logger, IServiceProvider se
 
                 foreach (var delete in toDelete)
                 {
-                    await context.LogMessages.AddAsync(new LogMessage { Timestamp = DateTime.Now, Message = $"Deleting {delete}..." });
+                    await context.LogMessages.AddAsync(new LogMessage { Timestamp = DateTime.Now, Message = $"Deleting {delete}..." })
+                                             .ConfigureAwait(false);
 
                     var fullPath = Path.Combine(link.Path, delete);
 
@@ -86,7 +90,8 @@ public sealed class SyncService(ILogger<SyncService> logger, IServiceProvider se
 
                 foreach (var download in toDownload.Where(x => x.Node?.Type == NodeType.File))
                 {
-                    await context.LogMessages.AddAsync(new LogMessage { Timestamp = DateTime.Now, Message = $"Downloading {download.FullPath}..." });
+                    await context.LogMessages.AddAsync(new LogMessage { Timestamp = DateTime.Now, Message = $"Downloading {download.FullPath}..." })
+                                             .ConfigureAwait(false);
 
                     var file = new FileInfo(Path.Combine(link.Path, download.FullPath));
                     if (!file.Directory!.Exists)
@@ -117,7 +122,7 @@ public sealed class SyncService(ILogger<SyncService> logger, IServiceProvider se
                             | UnixFileMode.OtherRead);
                     }
 
-                    await context.SaveChangesAsync(stoppingToken);
+                    await context.SaveChangesAsync().ConfigureAwait(false);
                 }
 
                 link.LastUpdated = DateTime.Now;
@@ -133,7 +138,7 @@ public sealed class SyncService(ILogger<SyncService> logger, IServiceProvider se
         }
 
         await context.LogMessages.Where(x => x.Timestamp < DateTime.Today.AddDays(-3)).ExecuteDeleteAsync(stoppingToken);
-        await context.SaveChangesAsync();
+        await context.SaveChangesAsync().ConfigureAwait(false);
     }
 
     private static Item ConvertToTree(IEnumerable<INode> nodes)
