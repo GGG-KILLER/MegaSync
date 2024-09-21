@@ -117,7 +117,7 @@
             using (var dbContext = await dbContextFactory.CreateDbContextAsync())
             {
                 links = await dbContext.MegaLinks.ToArrayAsync();
-                var lines = await dbContext.LogMessages.OrderByDescending(x => x.Timestamp).Take(50).ToArrayAsync();
+                var lines = await dbContext.LogMessages.OrderByDescending(x => x.Timestamp).ToArrayAsync();
                 log = string.Join("\n", lines.Select(x => $"{x.Timestamp:HH:mm:ss} {x.Message}"));
             }
         }
