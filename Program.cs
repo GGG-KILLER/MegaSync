@@ -4,7 +4,8 @@ using MegaSync.Data;
 using MegaSync.Services;
 using Microsoft.EntityFrameworkCore;
 
-SQLitePCL.raw.sqlite3_config(2 /*SQLITE_CONFIG_MULTITHREAD*/);
+// Doesn't work on this sqlite package version.
+// SQLitePCL.raw.sqlite3_config(2 /*SQLITE_CONFIG_MULTITHREAD*/);
 
 var builder = WebApplication.CreateBuilder(args);
 
